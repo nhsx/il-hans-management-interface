@@ -9,6 +9,8 @@ from internal_integrations.management_api.exceptions import ManagementAPIClientE
 from .models import CareProviderLocation, CareRecipient, RegisteredManager
 
 
+from os import getenv
+
 class CareProviderLocationForm(forms.ModelForm):
     class Meta:
         model = CareProviderLocation
@@ -22,6 +24,32 @@ class RegisteredManagerForm(forms.ModelForm):
         labels = {
             "cqc_registered_manager_id": "CQC Registered Manager ID",
         }
+
+
+class HighSecurityHash:
+    # This version is intentionally slow, derives its security from
+    # being slow, and must be used as the default.
+    def encode(self, salt="", data="") -> str:
+        return scrypt(
+            data.encode(),
+            salt=str(salt).encode(),
+            n=32768,
+            r=12,
+            p=6,
+            maxmem=2**26,
+        ).hex()
+
+class NoSecurityHash:
+    # This version is fast and offers no security whatsoever, and must
+    # be actively selected only for testing purposes.
+    def encode(self, salt="", data="") -> str:
+        return scrypt(
+            data.encode(),
+            salt=str(salt).encode(),
+            n=16,
+            r=12,
+            p=1,
+        ).hex()
 
 
 class CareRecipientForm(forms.ModelForm):
@@ -84,11 +112,9 @@ class CareRecipientForm(forms.ModelForm):
 
     def _generate_nhs_number_hash(self) -> str:
         # https://nhsx.github.io/il-hans-infrastructure/adrs/003-Do-not-use-NEMS-or-MESH
-        return scrypt(
-            self.cleaned_data["nhs_number"].encode(),
-            salt=str(self.cleaned_data["birth_date"]).encode(),
-            n=32768,
-            r=12,
-            p=6,
-            maxmem=2**26,
-        ).hex()
+        if getenv("STUPIDLY_HOBBLE_SECURITY") == "I_AM_AN_IDIOT_YES_I_REALLY_MEAN_IT":
+            hasher = NoSecurityHash()
+        else:
+            hasher = HighSecurityHash()
+        return hasher.encode(data=self.cleaned_data["nhs_number"],
+                             salt=self.cleaned_data["birth_date"])
